@@ -56,10 +56,7 @@ void ethernet_out(buf_t *buf, const uint8_t *mac, net_protocol_t protocol) {
   memcpy(hdr->src, a, sizeof(a));
 
   int res = driver_send(buf);
-  if (res < 0) {
-    printf("Error sending ethernet packet");
-  }
-  printf("Success sending ethernet packet");
+  printf(res < 0 ? "Error sending ethernet packet\n" : "Success sending ethernet packet\n");
 }
 /**
  * @brief 初始化以太网协议

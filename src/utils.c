@@ -72,7 +72,29 @@ uint8_t ip_prefix_match(uint8_t *ipa, uint8_t *ipb)
  * @param len 要计算的长度
  * @return uint16_t 校验和
  */
-uint16_t checksum16(uint16_t *data, size_t len)
+uint16_t checksum16(uint16_t *buf, size_t len)
 {
-    // TO-DO
+    uint8_t n = len/sizeof(uint16_t);
+    uint16_t data[n];
+    for(int i=0; i<n; i++){
+        memcpy(&data[i], buf+i, sizeof(uint16_t));
+    }
+
+    uint32_t add = 0;
+    if(n*sizeof(uint16_t) != len){
+        uint8_t left = 0;
+        memcpy(&left,buf+n, sizeof(uint8_t));
+        add += left;
+    }
+
+    for(int i=0; i<n; i++){
+        add += data[i];
+    }
+
+     //将32位数转换成16
+    while (add>>16){
+        add=(add>>16)+(add & 0xffff);
+    }
+
+    return swap16((uint16_t)(~add));
 }

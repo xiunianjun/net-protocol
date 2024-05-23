@@ -18,7 +18,23 @@ map_t udp_table;
  */
 static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip)
 {
-    // TO-DO
+    //实验那句“将被UDP伪头部覆盖的IP头部拷贝出来，暂存IP头部，以免被覆盖。”没看懂，为啥会被覆盖？以及哪来的IP头部？？
+    uint16_t length = buf->len;
+
+    buf_add_header(buf,sizeof(udp_peso_hdr_t));
+
+    udp_peso_hdr_t* peso_hdr = (udp_peso_hdr_t*)buf->data;
+    memcpy(peso_hdr->src_ip,src_ip,NET_IP_LEN*sizeof(uint8_t));
+    memcpy(peso_hdr->dst_ip,dst_ip,NET_IP_LEN*sizeof(uint8_t));
+    peso_hdr->placeholder = 0;
+    peso_hdr->protocol = NET_PROTOCOL_UDP;
+    //改了个swap
+    peso_hdr->total_len16 = swap16(length);
+
+    //应该可以用之前写的那个checksum吧
+    uint16_t res = checksum16((uint16_t*)(buf->data),buf->len);
+    buf_remove_header(buf,sizeof(udp_peso_hdr_t));
+    return res;
 }
 
 /**
@@ -29,7 +45,36 @@ static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip)
  */
 void udp_in(buf_t *buf, uint8_t *src_ip)
 {
-    // TO-DO
+    if(buf->len < sizeof(udp_hdr_t)){
+        return;
+    }
+
+    udp_hdr_t* hdr = (udp_hdr_t*)buf->data;
+
+    if(buf->len < swap16(hdr->total_len16)){
+        return;
+    }
+
+    uint16_t checksum16_old = hdr->checksum16;
+    hdr->checksum16 = 0;
+    uint16_t checksum16_new = swap16(udp_checksum(buf,src_ip,net_if_ip));
+    if(0 != memcmp(&checksum16_old,&checksum16_new,sizeof(uint16_t))){
+        return;
+    }
+    hdr->checksum16 = checksum16_old;
+
+    uint16_t dst_port16 = swap16(hdr->dst_port16);
+    uint16_t src_port16 = swap16(hdr->src_port16);
+
+    udp_handler_t* handler = map_get(&udp_table, &dst_port16);
+    if(handler == NULL){
+        buf_add_header(buf,sizeof(ip_hdr_t));
+        icmp_unreachable(buf,src_ip,ICMP_CODE_PORT_UNREACH);
+    }
+    else{
+        buf_remove_header(buf,sizeof(udp_hdr_t));
+        (*handler)(buf->data,buf->len,src_ip,src_port16);
+    }
 }
 
 /**
@@ -42,7 +87,22 @@ void udp_in(buf_t *buf, uint8_t *src_ip)
  */
 void udp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port)
 {
-    // TO-DO
+    buf_add_header(buf,sizeof(udp_hdr_t));
+    udp_hdr_t* hdr = (udp_hdr_t*)buf->data;
+    //以下swap16都是我乱套的，不保真
+    hdr->src_port16 = swap16(src_port);
+    hdr->dst_port16 = swap16(dst_port);
+    //总长度不包括伪头部和填充字节
+    hdr->total_len16 = swap16(buf->len);
+    hdr->checksum16 = 0;
+
+    hdr->checksum16 = swap16(udp_checksum(buf,net_if_ip,dst_ip));
+
+    if(buf->len % 2 == 1){
+        buf_add_padding(buf,sizeof(uint8_t));
+    }
+
+    ip_out(buf,dst_ip,NET_PROTOCOL_UDP);
 }
 
 /**

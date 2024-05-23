@@ -58,7 +58,17 @@ void arp_print()
  */
 void arp_req(uint8_t *target_ip)
 {
-    // TO-DO
+    buf_init(&txbuf,sizeof(arp_pkt_t));
+
+    arp_pkt_t* arp = (arp_pkt_t*)txbuf.data;
+    memcpy(arp,&arp_init_pkt,sizeof(arp_pkt_t));
+    //填入操作类型
+    uint16_t a = ARP_REQUEST;
+    a=swap16(a);
+    memcpy(&(arp->opcode16),&a,sizeof(uint16_t));
+    memcpy(arp->target_ip,target_ip,arp_init_pkt.pro_len*sizeof(uint8_t));
+
+    ethernet_out(&txbuf,ether_broadcast_mac,NET_PROTOCOL_ARP);
 }
 
 /**
@@ -69,7 +79,18 @@ void arp_req(uint8_t *target_ip)
  */
 void arp_resp(uint8_t *target_ip, uint8_t *target_mac)
 {
-    // TO-DO
+    buf_init(&txbuf,sizeof(arp_pkt_t));
+
+    arp_pkt_t* arp = (arp_pkt_t*)txbuf.data;
+    memcpy(arp,&arp_init_pkt,sizeof(arp_pkt_t));
+    
+    uint16_t a = ARP_REPLY;
+    a=swap16(a);
+    memcpy(&(arp->opcode16),&a,sizeof(uint16_t));
+    memcpy(arp->target_ip,target_ip,arp_init_pkt.pro_len*sizeof(uint8_t));
+    memcpy(arp->target_mac,target_mac,arp_init_pkt.hw_len*sizeof(uint8_t));
+
+    ethernet_out(&txbuf,target_mac,NET_PROTOCOL_ARP);
 }
 
 /**
@@ -80,7 +101,36 @@ void arp_resp(uint8_t *target_ip, uint8_t *target_mac)
  */
 void arp_in(buf_t *buf, uint8_t *src_mac)
 {
-    // TO-DO
+    if(buf->len < sizeof(arp_pkt_t)){
+        return;
+    }
+
+    arp_pkt_t p;
+    memcpy(&p, buf->data, sizeof(arp_pkt_t));
+
+    // buf_remove_header(buf, sizeof(arp_pkt_t));
+
+    if(p.hw_type16 != arp_init_pkt.hw_type16 || p.pro_type16 != arp_init_pkt.pro_type16 || 
+    p.hw_len != arp_init_pkt.hw_len ||p.pro_len != arp_init_pkt.pro_len ||
+    (p.opcode16 != swap16(ARP_REQUEST) && p.opcode16 != swap16(ARP_REPLY))){
+        return;
+    }
+
+    map_set(&arp_table,p.sender_ip,p.sender_mac);
+
+    buf_t* sendBuf = map_get(&arp_buf,p.sender_ip);
+    if(sendBuf == NULL){
+        if(p.opcode16 == swap16(ARP_REQUEST)){
+            if(0 == memcmp(p.target_ip,arp_init_pkt.sender_ip,NET_IP_LEN*sizeof(uint8_t))){
+                arp_resp(p.sender_ip,p.sender_mac);
+            }
+        }
+    }
+    else{
+        //ARP部分已经结束了，因此上层协议是IP协议
+        ethernet_out(sendBuf,p.sender_mac, NET_PROTOCOL_IP);
+        map_delete(&arp_buf,p.sender_ip);
+    }
 }
 
 /**
@@ -92,7 +142,17 @@ void arp_in(buf_t *buf, uint8_t *src_mac)
  */
 void arp_out(buf_t *buf, uint8_t *ip)
 {
-    // TO-DO
+    uint8_t* mac = map_get(&arp_table,ip);
+    if(mac != NULL){
+        ethernet_out(buf,mac,NET_PROTOCOL_IP);
+        return ;
+    }
+    
+    buf_t* p = map_get(&arp_buf,ip);
+    if(p == NULL){
+        map_set(&arp_buf,ip,buf);
+        arp_req(ip);
+    }
 }
 
 /**

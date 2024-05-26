@@ -58,6 +58,7 @@ int net_init() {
  * @param handler 该协议的in处理程序
  */
 // xn: 由于各个协议的 init 函数中
+// xn: 一个非常漂亮的委托实现
 void net_add_protocol(uint16_t protocol, net_handler_t handler) {
   map_set(&net_table, &protocol, &handler);
 }

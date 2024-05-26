@@ -50,6 +50,7 @@ void udp_in(buf_t *buf, uint8_t *src_ip) {
   udp_hdr_t *hdr = (udp_hdr_t *)buf->data;
 
   if (buf->len < swap16(hdr->total_len16)) {
+    printf("the length is problem.\n");
     return;
   }
 
@@ -57,6 +58,7 @@ void udp_in(buf_t *buf, uint8_t *src_ip) {
   hdr->checksum16 = 0;
   uint16_t checksum16_new = swap16(udp_checksum(buf, src_ip, net_if_ip));
   if (0 != memcmp(&checksum16_old, &checksum16_new, sizeof(uint16_t))) {
+    printf("the checksum is problem.\n");
     return;
   }
   hdr->checksum16 = checksum16_old;
@@ -86,10 +88,9 @@ void udp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip,
              uint16_t dst_port) {
   buf_add_header(buf, sizeof(udp_hdr_t));
   udp_hdr_t *hdr = (udp_hdr_t *)buf->data;
-  //以下swap16都是我乱套的，不保真
   hdr->src_port16 = swap16(src_port);
   hdr->dst_port16 = swap16(dst_port);
-  //总长度不包括伪头部和填充字节
+  // 总长度不包括伪头部和填充字节
   hdr->total_len16 = swap16(buf->len);
   hdr->checksum16 = 0;
 

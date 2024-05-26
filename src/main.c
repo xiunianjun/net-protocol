@@ -9,6 +9,13 @@ void handler(uint8_t *data, size_t len, uint8_t *src_ip, uint16_t src_port) {
     putchar(data[i]);
   putchar('\n');
   udp_send(data, len, 60000, src_ip, 60000); //发送udp包
+  uint8_t new_data[1600];
+  memcpy(new_data, data, sizeof(uint8_t) * len);
+  for (size_t i = len; i < sizeof(new_data); ++i) {
+      new_data[i] = 'a'; // 'a' 的 ASCII 码是 97
+  }
+  // uint8_t sender_ip[NET_IP_LEN] = NET_IF_IP;
+  udp_send(new_data, 1600, 60000, src_ip, 60000); //发送udp包
 }
 #endif
 

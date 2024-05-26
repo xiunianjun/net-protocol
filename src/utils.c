@@ -87,7 +87,6 @@ uint16_t checksum16(uint16_t *buf, size_t len) {
     add += data[i];
   }
 
-  //将32位数转换成16
   while (add >> 16) {
     add = (add >> 16) + (add & 0xffff);
   }

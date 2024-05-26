@@ -52,8 +52,9 @@ void ethernet_out(buf_t *buf, const uint8_t *mac, net_protocol_t protocol) {
   // 填入目的协议
   hdr->protocol16 = swap16(protocol);
 
-  printf(driver_send(buf) < 0 ? "Error sending ethernet packet\n"
-                              : "Success sending ethernet packet\n");
+  driver_send(buf);
+  // printf(res < 0 ? "Error sending ethernet packet\n"
+  //                             : "Success sending ethernet packet\n");
 }
 /**
  * @brief 初始化以太网协议

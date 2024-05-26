@@ -2,6 +2,8 @@
 #define ICMP_H
 
 #include "net.h"
+#include <sys/time.h> // for gettimeofday
+#include <unistd.h>   // for getpid()
 
 #pragma pack(1)
 typedef struct icmp_hdr {
@@ -23,6 +25,11 @@ typedef enum icmp_code {
   ICMP_CODE_PROTOCOL_UNREACH = 2, // 协议不可达
   ICMP_CODE_PORT_UNREACH = 3      // 端口不可达
 } icmp_code_t;
+
+#define ICMP_TIMEOUT_TIME 5 // ICMP 请求超时时间， 5 seconds
+
+int icmp_wait_echo_reply(int target_seq);
+int icmp_send_echo_request(uint8_t *data, uint16_t len, uint8_t *dst_ip);
 void icmp_in(buf_t *buf, uint8_t *src_ip);
 void icmp_unreachable(buf_t *recv_buf, uint8_t *src_ip, icmp_code_t code);
 void icmp_init();

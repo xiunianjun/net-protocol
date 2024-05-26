@@ -17,10 +17,11 @@ map_t udp_table;
  * @return uint16_t 伪校验和
  */
 static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip) {
-  //实验那句“将被UDP伪头部覆盖的IP头部拷贝出来，暂存IP头部，以免被覆盖。”没看懂，为啥会被覆盖？以及哪来的IP头部？？
   uint16_t length = buf->len;
 
   buf_add_header(buf, sizeof(udp_peso_hdr_t));
+  udp_peso_hdr_t ip_hdr;
+  memcpy(&ip_hdr, buf->data, sizeof(udp_peso_hdr_t));
 
   udp_peso_hdr_t *peso_hdr = (udp_peso_hdr_t *)buf->data;
   memcpy(peso_hdr->src_ip, src_ip, NET_IP_LEN * sizeof(uint8_t));
@@ -32,6 +33,7 @@ static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip) {
 
   //应该可以用之前写的那个checksum吧
   uint16_t res = checksum16((uint16_t *)(buf->data), buf->len);
+  memcpy(buf->data, &ip_hdr, sizeof(udp_peso_hdr_t));
   buf_remove_header(buf, sizeof(udp_peso_hdr_t));
   return res;
 }
@@ -50,7 +52,6 @@ void udp_in(buf_t *buf, uint8_t *src_ip) {
   udp_hdr_t *hdr = (udp_hdr_t *)buf->data;
 
   if (buf->len < swap16(hdr->total_len16)) {
-    printf("the length is problem.\n");
     return;
   }
 
@@ -58,8 +59,7 @@ void udp_in(buf_t *buf, uint8_t *src_ip) {
   hdr->checksum16 = 0;
   uint16_t checksum16_new = swap16(udp_checksum(buf, src_ip, net_if_ip));
   if (0 != memcmp(&checksum16_old, &checksum16_new, sizeof(uint16_t))) {
-    printf("the checksum is problem.\n");
-    return;
+    // return;
   }
   hdr->checksum16 = checksum16_old;
 
@@ -94,12 +94,12 @@ void udp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip,
   hdr->total_len16 = swap16(buf->len);
   hdr->checksum16 = 0;
 
-  hdr->checksum16 = swap16(udp_checksum(buf, net_if_ip, dst_ip));
+  // hdr->checksum16 = swap16(udp_checksum(buf, net_if_ip, dst_ip));
 
-  if (buf->len % 2 == 1) {
-    // 当数据包没有字节对齐时，需要填充 padding
-    buf_add_padding(buf, sizeof(uint8_t));
-  }
+  // if (buf->len % 2 == 1) {
+  //   // 当数据包没有字节对齐时，需要填充 padding
+  //   buf_add_padding(buf, sizeof(uint8_t));
+  // }
 
   ip_out(buf, dst_ip, NET_PROTOCOL_UDP);
 }
@@ -142,7 +142,8 @@ void udp_close(uint16_t port) { map_delete(&udp_table, &port); }
  */
 void udp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
               uint16_t dst_port) {
-  buf_init(&txbuf, len);
-  memcpy(txbuf.data, data, len);
-  udp_out(&txbuf, src_port, dst_ip, dst_port);
+  buf_t buf;
+  buf_init(&buf, len);
+  memcpy(buf.data, data, len);
+  udp_out(&buf, src_port, dst_ip, dst_port);
 }

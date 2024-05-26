@@ -7,6 +7,9 @@
 #define ICMP
 #define UDP
 
+#define true (1)
+#define false (0)
+
 #ifdef TEST
 #define NET_IF_IP                                                              \
   { 192, 168, 163, 103 } //测试用网卡ip地址

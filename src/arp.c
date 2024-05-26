@@ -55,10 +55,9 @@ void arp_print() {
  * @param target_ip 想要知道的目标的ip地址
  */
 void arp_req(uint8_t *target_ip) {
-  buf_t arp_buf;
-  buf_init(&arp_buf, sizeof(arp_pkt_t));
+  buf_init(&txbuf, sizeof(arp_pkt_t));
 
-  arp_pkt_t *arp = (arp_pkt_t *)arp_buf.data;
+  arp_pkt_t *arp = (arp_pkt_t *)txbuf.data;
   memcpy(arp, &arp_init_pkt, sizeof(arp_pkt_t));
   uint16_t opcode = ARP_REQUEST;
   opcode = swap16(opcode);
@@ -66,7 +65,7 @@ void arp_req(uint8_t *target_ip) {
   memcpy(arp->target_ip, target_ip, arp_init_pkt.pro_len * sizeof(uint8_t));
 
   // 广播地址发送 ARP 请求
-  ethernet_out(&arp_buf, ether_broadcast_mac, NET_PROTOCOL_ARP);
+  ethernet_out(&txbuf, ether_broadcast_mac, NET_PROTOCOL_ARP);
 }
 
 /**
@@ -76,10 +75,9 @@ void arp_req(uint8_t *target_ip) {
  * @param target_mac 目标mac地址
  */
 void arp_resp(uint8_t *target_ip, uint8_t *target_mac) {
-  buf_t arp_buf;
-  buf_init(&arp_buf, sizeof(arp_pkt_t));
+  buf_init(&txbuf, sizeof(arp_pkt_t));
 
-  arp_pkt_t *arp = (arp_pkt_t *)arp_buf.data;
+  arp_pkt_t *arp = (arp_pkt_t *)txbuf.data;
   memcpy(arp, &arp_init_pkt, sizeof(arp_pkt_t));
   uint16_t opcode = ARP_REPLY;
   opcode = swap16(opcode);
@@ -87,7 +85,7 @@ void arp_resp(uint8_t *target_ip, uint8_t *target_mac) {
   memcpy(arp->target_ip, target_ip, arp_init_pkt.pro_len * sizeof(uint8_t));
   memcpy(arp->target_mac, target_mac, arp_init_pkt.hw_len * sizeof(uint8_t));
 
-  ethernet_out(&arp_buf, target_mac, NET_PROTOCOL_ARP);
+  ethernet_out(&txbuf, target_mac, NET_PROTOCOL_ARP);
 }
 
 /**

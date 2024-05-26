@@ -9,16 +9,16 @@
 uint16_t id16 = 0; // xn: 当前ip报文所有分片发出去了之后，才能增加
 
 typedef struct {
-  uint16_t offset; // the offset
-  uint8_t *data;   // the data
-  uint16_t len;
+  uint16_t offset; // 该分片的 offset
+  uint8_t *data;   // 该分片的 data
+  uint16_t len;    // 该分片数据部分的长度
 } do_pair;
 
 typedef struct {
-  do_pair bufs[IP_MAX_FRAGMENT];
-  int tot_size;
-  int cnt;
-  int is_over;
+  do_pair bufs[IP_MAX_FRAGMENT]; // 对应 IP 报文的所有分片 buf
+  int cnt;                       // 该 IP 报文当前已接收的分片总数
+  int tot_size;                  // 该 IP 报文当前已接收的总大小
+  int is_over; // 是否已经接收到该 IP 报文的 MF == 0  的分片
 } fragment_value;
 
 // for qsort
@@ -115,13 +115,12 @@ void ip_in(buf_t *buf, uint8_t *src_mac) {
     return;
   }
 
+  /* 一系列检查 */
   ip_hdr_t ip_hdr;
   memcpy(&ip_hdr, buf->data, sizeof(ip_hdr_t));
-
   if (ip_hdr.version != IP_VERSION_4 || swap16(ip_hdr.total_len16) > buf->len) {
     return;
   }
-
   if (0 != memcmp(ip_hdr.dst_ip, net_if_ip, NET_IP_LEN * sizeof(uint8_t))) {
     return; // 不是本机地址则丢弃不处理
   }
@@ -131,19 +130,19 @@ void ip_in(buf_t *buf, uint8_t *src_mac) {
   ip_hdr.hdr_checksum16 = 0;
   uint16_t hdr_checksum16_new =
       swap16(checksum16((uint16_t *)(&ip_hdr), sizeof(ip_hdr_t)));
-  if (0 != memcmp(&hdr_checksum16_new, &hdr_checksum16_ori, sizeof(uint16_t))) {
+  if (0 != memcmp(&hdr_checksum16_new, &hdr_checksum16_ori, sizeof(uint16_t)))
     return;
-  }
   ip_hdr.hdr_checksum16 = hdr_checksum16_ori;
 
+  // 掐头去尾
   buf_remove_padding(buf, buf->len - swap16(ip_hdr.total_len16));
-
   net_protocol_t protocol = (net_protocol_t)(ip_hdr.protocol);
   if (protocol != NET_PROTOCOL_ICMP && protocol != NET_PROTOCOL_UDP) {
     icmp_unreachable(buf, ip_hdr.src_ip, ICMP_CODE_PROTOCOL_UNREACH);
   }
-
   buf_remove_header(buf, sizeof(ip_hdr_t));
+
+  // 传入
   ip_fragment_in(buf->data, buf->len, swap16(ip_hdr.flags_fragment16),
                  swap16(ip_hdr.id16), protocol, ip_hdr.src_ip);
 }

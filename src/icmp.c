@@ -17,9 +17,9 @@ static void icmp_resp(buf_t *req_buf, uint8_t *src_ip) {
   hdr->code = 0;
 
   hdr->checksum16 = 0;
+  // 校验和涵盖整个报文
   uint16_t checksum16_new =
       swap16(checksum16((uint16_t *)(txbuf.data), txbuf.len));
-  //校验和涵盖整个报文
   hdr->checksum16 = checksum16_new;
 
   ip_out(&txbuf, src_ip, NET_PROTOCOL_ICMP);
@@ -32,7 +32,7 @@ static void icmp_resp(buf_t *req_buf, uint8_t *src_ip) {
  * @param src_ip 源ip地址
  */
 void icmp_in(buf_t *buf, uint8_t *src_ip) {
-  //不对差错报告报文再发送差错报告报文
+  // 不对差错报告报文再发送差错报告报文
   if (buf->len < sizeof(icmp_hdr_t)) {
     return;
   }
@@ -40,13 +40,12 @@ void icmp_in(buf_t *buf, uint8_t *src_ip) {
   icmp_hdr_t hdr;
   memcpy(&hdr, buf->data, sizeof(icmp_hdr_t));
 
-  // uint16_t* temp = (uint16_t*)(&hdr);
-  // *temp = swap16(*temp);
-
-  //查看该报文的ICMP类型是否为回显请求
+  // 查看该报文的ICMP类型是否为回显请求（如 ping 应答）
   if (hdr.type == ICMP_TYPE_ECHO_REQUEST && hdr.code == 0) {
     icmp_resp(buf, src_ip);
   }
+
+  // xn: 未实现错误处理。我猜如果要处理也是需要注册 handler 之类的结构
 }
 
 /**
@@ -65,8 +64,6 @@ void icmp_unreachable(buf_t *recv_buf, uint8_t *src_ip, icmp_code_t code) {
   icmp_hdr_t *hdr = (icmp_hdr_t *)txbuf.data;
   hdr->code = code;
   hdr->type = ICMP_TYPE_UNREACH;
-  // uint16_t* temp = (uint16_t*)(&hdr);
-  // *temp = swap16(*temp);
   hdr->id16 = 0;
   hdr->seq16 = 0;
 

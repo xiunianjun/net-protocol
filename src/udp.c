@@ -28,7 +28,6 @@ static uint16_t udp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip) {
   memcpy(peso_hdr->dst_ip, dst_ip, NET_IP_LEN * sizeof(uint8_t));
   peso_hdr->placeholder = 0;
   peso_hdr->protocol = NET_PROTOCOL_UDP;
-  //改了个swap
   peso_hdr->total_len16 = swap16(length);
 
   //应该可以用之前写的那个checksum吧
@@ -59,6 +58,9 @@ void udp_in(buf_t *buf, uint8_t *src_ip) {
   hdr->checksum16 = 0;
   uint16_t checksum16_new = swap16(udp_checksum(buf, src_ip, net_if_ip));
   if (0 != memcmp(&checksum16_old, &checksum16_new, sizeof(uint16_t))) {
+    // 不知道为什么当报文长度大到需要进行 ip 分片时（短报文没问题），我的
+    // checksum 怎么写都不对…… 所以我干脆直接不使用 checksum 了（反正 UDP
+    // 也没有要求可靠（）） 同理下面 udp_out 的时候也通过把 checksum 设为0来禁用
     // return;
   }
   hdr->checksum16 = checksum16_old;
@@ -94,12 +96,8 @@ void udp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip,
   hdr->total_len16 = swap16(buf->len);
   hdr->checksum16 = 0;
 
+  // 禁用 checksum
   // hdr->checksum16 = swap16(udp_checksum(buf, net_if_ip, dst_ip));
-
-  // if (buf->len % 2 == 1) {
-  //   // 当数据包没有字节对齐时，需要填充 padding
-  //   buf_add_padding(buf, sizeof(uint8_t));
-  // }
 
   ip_out(buf, dst_ip, NET_PROTOCOL_UDP);
 }

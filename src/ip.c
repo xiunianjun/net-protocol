@@ -6,7 +6,7 @@
 
 #define MFU_SIZE 1500
 
-uint16_t id16 = 0;
+uint16_t id16 = 0; // xn: 当前ip报文所有分片发出去了之后，才能增加
 
 /**
  * @brief 处理一个收到的数据包
@@ -26,6 +26,11 @@ void ip_in(buf_t *buf, uint8_t *src_mac) {
     return;
   }
 
+  if (0 != memcmp(ip_hdr.dst_ip, net_if_ip, NET_IP_LEN * sizeof(uint8_t))) {
+    return; // 不是本机地址则丢弃不处理
+  }
+
+  // 检查校验和是否一致
   uint16_t hdr_checksum16_ori = ip_hdr.hdr_checksum16;
   ip_hdr.hdr_checksum16 = 0;
   uint16_t hdr_checksum16_new =
@@ -34,10 +39,6 @@ void ip_in(buf_t *buf, uint8_t *src_mac) {
     return;
   }
   ip_hdr.hdr_checksum16 = hdr_checksum16_ori;
-
-  if (0 != memcmp(ip_hdr.dst_ip, net_if_ip, NET_IP_LEN * sizeof(uint8_t))) {
-    return;
-  }
 
   buf_remove_padding(buf, buf->len - swap16(ip_hdr.total_len16));
 
@@ -93,41 +94,37 @@ void ip_fragment_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol, int id,
  * @param protocol 上层协议
  */
 void ip_out(buf_t *buf, uint8_t *ip, net_protocol_t protocol) {
+  // 分片为 MTU - 头部大小
   int slice = MFU_SIZE - sizeof(ip_hdr_t) / sizeof(uint8_t);
 
-  if (buf->len <= slice) {
+  if (buf->len <= slice) { // 数据包过小，无需分片
     ip_fragment_out(buf, ip, protocol, 0, 0, 0);
     id16++;
     return;
   }
 
+  // 分片处理
   int n = buf->len / slice;
-  if (n * slice == buf->len) {
-    for (int i = 0; i < n - 1; i++) {
-      buf_t ip_buf;
-      buf_init(&ip_buf, slice * sizeof(uint8_t));
-      memcpy(ip_buf.data, buf->data + i * slice, slice * sizeof(uint8_t));
-      ip_fragment_out(&ip_buf, ip, protocol, i, i * slice, IP_MORE_FRAGMENT);
-    }
+  for (int i = 0; i <= n - 1; i++) {
     buf_t ip_buf;
     buf_init(&ip_buf, slice * sizeof(uint8_t));
-    memcpy(ip_buf.data, buf->data + (n - 1) * slice, slice * sizeof(uint8_t));
-    ip_fragment_out(&ip_buf, ip, protocol, (n - 1), (n - 1) * slice, 0);
-  } else {
-    for (int i = 0; i < n; i++) {
-      buf_t ip_buf;
-      buf_init(&ip_buf, slice * sizeof(uint8_t));
-      memcpy(ip_buf.data, buf->data + i * slice, slice * sizeof(uint8_t));
-      ip_fragment_out(&ip_buf, ip, protocol, i, i * slice, IP_MORE_FRAGMENT);
+    memcpy(ip_buf.data, buf->data + i * slice, slice * sizeof(uint8_t));
+    if (__builtin_expect((i == n - 1 && n * slice == buf->len),
+                         0)) { // buf->len被slice整除时标记MF
+      ip_fragment_out(&ip_buf, ip, protocol, i, i * slice, 0);
+      return;
     }
-    buf_t ip_buf;
-    buf_init(&ip_buf, (buf->len - n * slice) * sizeof(uint8_t));
-    memcpy(ip_buf.data, buf->data + (n)*slice,
-           (buf->len - n * slice) * sizeof(uint8_t));
-    ip_fragment_out(&ip_buf, ip, protocol, (n), (n)*slice, 0);
+    ip_fragment_out(&ip_buf, ip, protocol, i, i * slice, IP_MORE_FRAGMENT);
   }
-  //这个++的位置很重要
-  id16++;
+
+  // 处理buf->len不被slice整除时的最后剩的一点尾巴
+  buf_t ip_buf;
+  buf_init(&ip_buf, (buf->len - n * slice) * sizeof(uint8_t));
+  memcpy(ip_buf.data, buf->data + n * slice,
+         (buf->len - n * slice) * sizeof(uint8_t));
+  ip_fragment_out(&ip_buf, ip, protocol, n, n * slice, 0);
+
+  id16++; // 当前ip报文所有分片发送完毕
 }
 
 /**

@@ -17,13 +17,13 @@ static const arp_pkt_t arp_init_pkt = {.hw_type16 = swap16(ARP_HW_ETHER),
                                        .target_mac = {0}};
 
 /**
- * @brief arp地址转换表，<ip,mac>的容器
+ * @brief arp地址转换表，<ip, mac>的容器
  *
  */
 map_t arp_table;
 
 /**
- * @brief arp buffer，<ip,buf_t>的容器
+ * @brief arp buffer，<ip, buf_t>的容器
  *
  */
 map_t arp_buf;
@@ -55,18 +55,18 @@ void arp_print() {
  * @param target_ip 想要知道的目标的ip地址
  */
 void arp_req(uint8_t *target_ip) {
-  buf_init(&txbuf, sizeof(arp_pkt_t));
+  buf_t arp_buf;
+  buf_init(&arp_buf, sizeof(arp_pkt_t));
 
-  arp_pkt_t *arp = (arp_pkt_t *)txbuf.data;
+  arp_pkt_t *arp = (arp_pkt_t *)arp_buf.data;
   memcpy(arp, &arp_init_pkt, sizeof(arp_pkt_t));
-  //填入操作类型
-  uint16_t a = ARP_REQUEST;
-  a = swap16(a);
-  memcpy(&(arp->opcode16), &a, sizeof(uint16_t));
+  uint16_t opcode = ARP_REQUEST;
+  opcode = swap16(opcode);
+  memcpy(&(arp->opcode16), &opcode, sizeof(uint16_t));
   memcpy(arp->target_ip, target_ip, arp_init_pkt.pro_len * sizeof(uint8_t));
 
   // 广播地址发送 ARP 请求
-  ethernet_out(&txbuf, ether_broadcast_mac, NET_PROTOCOL_ARP);
+  ethernet_out(&arp_buf, ether_broadcast_mac, NET_PROTOCOL_ARP);
 }
 
 /**
@@ -76,18 +76,18 @@ void arp_req(uint8_t *target_ip) {
  * @param target_mac 目标mac地址
  */
 void arp_resp(uint8_t *target_ip, uint8_t *target_mac) {
-  buf_init(&txbuf, sizeof(arp_pkt_t));
+  buf_t arp_buf;
+  buf_init(&arp_buf, sizeof(arp_pkt_t));
 
-  arp_pkt_t *arp = (arp_pkt_t *)txbuf.data;
+  arp_pkt_t *arp = (arp_pkt_t *)arp_buf.data;
   memcpy(arp, &arp_init_pkt, sizeof(arp_pkt_t));
-
-  uint16_t a = ARP_REPLY;
-  a = swap16(a);
-  memcpy(&(arp->opcode16), &a, sizeof(uint16_t));
+  uint16_t opcode = ARP_REPLY;
+  opcode = swap16(opcode);
+  memcpy(&(arp->opcode16), &opcode, sizeof(uint16_t));
   memcpy(arp->target_ip, target_ip, arp_init_pkt.pro_len * sizeof(uint8_t));
   memcpy(arp->target_mac, target_mac, arp_init_pkt.hw_len * sizeof(uint8_t));
 
-  ethernet_out(&txbuf, target_mac, NET_PROTOCOL_ARP);
+  ethernet_out(&arp_buf, target_mac, NET_PROTOCOL_ARP);
 }
 
 /**
@@ -104,8 +104,7 @@ void arp_in(buf_t *buf, uint8_t *src_mac) {
   arp_pkt_t p;
   memcpy(&p, buf->data, sizeof(arp_pkt_t));
 
-  // buf_remove_header(buf, sizeof(arp_pkt_t));
-
+  // 报头检查
   if (p.hw_type16 != arp_init_pkt.hw_type16 ||
       p.pro_type16 != arp_init_pkt.pro_type16 ||
       p.hw_len != arp_init_pkt.hw_len || p.pro_len != arp_init_pkt.pro_len ||
@@ -113,18 +112,29 @@ void arp_in(buf_t *buf, uint8_t *src_mac) {
     return;
   }
 
-  map_set(&arp_table, p.sender_ip, p.sender_mac);
+  map_set(&arp_table, p.sender_ip, p.sender_mac); // 记录下发送方对应的映射
 
-  buf_t *sendBuf = map_get(&arp_buf, p.sender_ip);
-  if (sendBuf == NULL) {
-    if (p.opcode16 == swap16(ARP_REQUEST)) {
-      if (0 == memcmp(p.target_ip, arp_init_pkt.sender_ip,
-                      NET_IP_LEN * sizeof(uint8_t))) {
-        arp_resp(p.sender_ip, p.sender_mac);
-      }
+  /*
+    xn: 我这里没有完全按照指导书中的逻辑：
+    如果该接收报文的IP地址没有对应的arp_buf缓存，才需要判断接收到的报文是否为ARP_REQUEST请求报文。
+    因为我本来觉得有可能出现一种情况，即己方有数据要传输的同时，对方主机发来的又是arp
+    request。 不过似乎这种情况不会发生，毕竟如果对方发来arp
+    request说明对方需要发数据给自己。 ① 自己为client端
+    server不会主动建立连接，所以这时候肯定是server要对自己发过的数据进行回复，那么
+    既然自己都发过了，就不可能会还有驻留数据。。。
+    ② 自己为server端 差不多同理①，server不会主动传输数据，所以对方肯定已经发过了
+    故而有驻留数据的情况和需要response的情况不可能同时发生。
+  */
+  if (p.opcode16 == swap16(ARP_REQUEST)) { // 如果是 ARP Request
+    if (0 == memcmp(p.target_ip, arp_init_pkt.sender_ip,
+                    NET_IP_LEN * sizeof(uint8_t))) {
+      arp_resp(p.sender_ip, p.sender_mac);
     }
-  } else {
-    // ARP部分已经结束了，因此上层协议是IP协议
+  }
+
+  // 查询该新 ip 地址是否有驻留缓存
+  buf_t *sendBuf = map_get(&arp_buf, p.sender_ip);
+  if (sendBuf) { // 发送驻留帧
     ethernet_out(sendBuf, p.sender_mac, NET_PROTOCOL_IP);
     map_delete(&arp_buf, p.sender_ip);
   }
@@ -139,16 +149,17 @@ void arp_in(buf_t *buf, uint8_t *src_mac) {
  */
 void arp_out(buf_t *buf, uint8_t *ip) {
   uint8_t *mac = map_get(&arp_table, ip);
-  if (mac != NULL) {
+  if (mac) {
     ethernet_out(buf, mac, NET_PROTOCOL_IP);
     return;
   }
 
   buf_t *p = map_get(&arp_buf, ip);
-  if (p == NULL) {
-    map_set(&arp_buf, ip, buf);
-    arp_req(ip);
-  }
+  if (p)
+    return; // 直接丢弃
+
+  map_set(&arp_buf, ip, buf);
+  arp_req(ip);
 }
 
 /**

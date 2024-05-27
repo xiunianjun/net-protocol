@@ -60,6 +60,8 @@ void tcp_init();
 void tcp_in(buf_t *buf, uint8_t *src_ip);
 void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
               uint16_t dst_port);
-int tcp_open(uint16_t port, tcp_handler_t handler);
-void tcp_close(uint16_t port);
+void tcp_connect(uint16_t port, uint8_t *dst_ip);
+int tcp_open(uint16_t port, tcp_handler_t handler, int server);
+int tcp_is_closed();
+void tcp_close(uint16_t port, uint8_t *dst_ip);
 #endif

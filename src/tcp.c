@@ -5,6 +5,8 @@
 
 map_t tcp_table;
 
+int is_end = 0;        // 当前连接是否结束
+int is_server = 0;     // 主机是 server 吗？
 int window_size = 4;   // 发送窗口
 int syn_receive = 0;   // 标识是否已经收到 syn 信号
 int syn_send = 0;      // 标识是否已经发送 syn 信号
@@ -12,10 +14,9 @@ int fin_receive = 0;   // 标识是否已经收到 fin 信号
 int fin_send = 0;      // 标识是否已经发送 fin 信号
 int should_ack = 0;    // 标记己方是否需要 ack
 uint32_t seq = 0;      // 当前序列号
-uint32_t ack = 0;      // 当前要发的 ACK
+uint32_t ackno = 0;    // 当前要发的 ACK
 uint32_t peer_seq = 0; // 对方序列号
 uint32_t peer_ack = 0; // 对方发来的 ACK
-
 
 /**
  * @brief 重置 tcp 连接
@@ -66,49 +67,87 @@ static uint16_t tcp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip) {
  * @param dst_ip 目的ip地址
  * @param dst_port 目的端口
  */
-void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
-              uint16_t dst_port) {
-  if (!should_ack && !len)
-    return;
-  buf_t buf;
-  buf_init(&buf, len);
-  memcpy(buf.data, data, len);
-  buf_add_header(&buf, sizeof(tcp_hdr_t));
-  tcp_hdr_t *hdr = (tcp_hdr_t *)buf.data;
+void tcp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port,
+             int syn, int fin, int ack) {
+  buf_add_header(buf, sizeof(tcp_hdr_t));
+  tcp_hdr_t *hdr = (tcp_hdr_t *)buf->data;
   hdr->flags = 0;
   hdr->doff = ((TCP_HEADER_LEN / 4) << 4);
   hdr->src_port16 = swap16(src_port);
   hdr->dst_port16 = swap16(dst_port);
 
   // 还没开始链接，发送
-  assert(syn_receive);
-  if (!syn_send) {
+  if (syn) {
     hdr->flags = (hdr->flags | FLAG_SYN);
-    syn_send = true;
   }
+
   hdr->seqno = swap32(seq);
-  seq += len; // TODO
 
   // 如果要发送 ACK 则发送（顺带 ACK ）
-  if (should_ack) {
+  if (ack) {
     hdr->flags = (hdr->flags | FLAG_ACK);
-    hdr->ackno = swap32(ack);
-    should_ack = false;
+    hdr->ackno = swap32(ackno);
   }
   hdr->win = swap16(window_size);
 
   // 对方链接关闭
-  if (fin_receive) {
+  if (fin) {
     hdr->flags = (hdr->flags | FLAG_FIN);
-    fin_send = true;
   }
 
   // 校验和
   hdr->checksum16 = 0;
-  hdr->checksum16 = swap16(tcp_checksum(&buf, net_if_ip, dst_ip));
+  hdr->checksum16 = swap16(tcp_checksum(buf, net_if_ip, dst_ip));
 
   // 发送数据
-  ip_out(&buf, dst_ip, NET_PROTOCOL_TCP);
+  ip_out(buf, dst_ip, NET_PROTOCOL_TCP);
+}
+
+/**
+ * @brief 发送 tcp 报文
+ *
+ * @param data  要发送的数据
+ * @param len   数据长度
+ * @param src_port 源端口
+ * @param dst_ip 目的ip地址
+ * @param dst_port 目的端口
+ */
+void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
+              uint16_t dst_port) {
+  if (!should_ack && !len && !(!syn_receive && !syn_send))
+    return;
+  int syn = 0, fin = 0, ack = 0;
+  buf_t buf;
+  buf_init(&buf, len);
+  if (data)
+    memcpy(buf.data, data, len);
+
+  // 还没开始链接，发送
+  if (!syn_receive && !syn_send && !is_server && !is_end) {
+    syn = 1;
+    syn_send = true;
+    is_end = false;
+  }
+
+  if (!syn_send && syn_receive && is_server) {
+    syn = 1;
+    syn_send = true;
+    is_end = false;
+  }
+
+  // 如果要发送 ACK 则发送（顺带 ACK ）
+  ack = should_ack;
+  should_ack = false;
+
+  // 对方链接关闭
+  if (fin_receive && !fin_send) {
+    fin = 1;
+    fin_send = true;
+  }
+
+  if (!fin && !syn && !len && !ack)
+    return;
+  tcp_out(&buf, src_port, dst_ip, dst_port, syn, fin, ack);
 }
 
 /**
@@ -142,6 +181,7 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
   if (hdr->flags & FLAG_SYN) {
     fin_receive = false;
     syn_receive = true;
+    is_end = false;
   }
 
   // 收到终止报文
@@ -152,18 +192,19 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
   // 收到终止报文确认 TODO
   if (fin_send && fin_receive && (hdr->flags & FLAG_ACK)) {
     tcp_rst();
-    return;
+    is_end = true;
   }
 
   // 更新 ack TODO
   peer_seq = swap32(hdr->seqno);
   if (hdr->flags & FLAG_ACK) {
     peer_ack = swap32(hdr->ackno);
+    seq = peer_ack;
   }
   if (buf->len > head_len ||
       ((hdr->flags & FLAG_FIN) || (hdr->flags & FLAG_SYN))) {
-    ack = swap32(hdr->seqno) + ((hdr->flags & FLAG_FIN) ? 1 : 0) +
-          ((hdr->flags & FLAG_SYN) ? 1 : 0) + buf->len - head_len;
+    ackno = peer_seq + ((hdr->flags & FLAG_FIN) ? 1 : 0) +
+            ((hdr->flags & FLAG_SYN) ? 1 : 0) + buf->len - head_len;
     should_ack = true;
   }
 
@@ -190,22 +231,49 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
 }
 
 /**
+ * @brief tcp client 发送连接请求
+ *
+ * @param port 目标端口号
+ * @param dst_ip 目标ip地址
+ */
+void tcp_connect(uint16_t port, uint8_t *dst_ip) {
+  printf("connect!\n");
+  tcp_send(NULL, 0, 60000, dst_ip, port);
+}
+
+/**
  * @brief 打开一个 tcp 端口并注册处理程序
  *
  * @param port 端口号
  * @param handler 处理程序
+ * @param server 当前主机是服务器吗？
  * @return int 成功为0，失败为-1
  */
-int tcp_open(uint16_t port, tcp_handler_t handler) {
+int tcp_open(uint16_t port, tcp_handler_t handler, int server) {
+  is_server = server;
   return map_set(&tcp_table, &port, &handler);
 }
 
 /**
+ * @brief 查询 tcp 连接是否已经关闭
+ *
+ * @return 1表示已经关闭，0表示没有关闭
+ */
+int tcp_is_closed() { return is_end; }
+
+/**
  * @brief 关闭一个 tcp 端口
  *
- * @param port 端口号
+ * @param port 目标端口号
+ * @param dst_ip 目标 ip 地址
  */
-void tcp_close(uint16_t port) { map_delete(&tcp_table, &port); }
+void tcp_close(uint16_t port, uint8_t *dst_ip) {
+  buf_t buf;
+  buf_init(&buf, 0);
+  tcp_out(&buf, 60000, dst_ip, port, 0, 1, should_ack);
+  should_ack = false;
+  fin_send = true;
+}
 
 /**
  * @brief 初始化 tcp 协议

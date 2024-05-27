@@ -33,23 +33,51 @@ void udp_listen() {
 #ifdef TCP
 void tcp_handler(uint8_t *data, size_t len, uint8_t *src_ip,
                  uint16_t src_port) {
-  printf("recv tcp packet from %s:%u len=%zu\n", iptos(src_ip), src_port, len);
   for (int i = 0; i < len; i++)
     putchar(data[i]);
-  putchar('\n');
-  printf("there is %ld as\n", len);
-  tcp_send(data, 0, 60000, src_ip, 60000); //发送udp包
+  if (len)
+    putchar('\n');
+  fflush(stdout);
+  tcp_send(data, len, 60000, src_ip, 60000); //发送udp包
 }
 
 void tcp_server() {
   printf("tcp server!\n");
-  tcp_open(60000, tcp_handler);
+  tcp_open(60000, tcp_handler, 1);
   while (1) {
     net_poll(); // 一次主循环
   }
+  uint8_t dst_ip[NET_IP_LEN] = {10, 250, 196, 1};
+  tcp_close(60000, dst_ip);
 }
 
-void tcp_client() { printf("tcp client!\n"); }
+int handle_times = 0;
+void tcp_client_handler(uint8_t *data, size_t len, uint8_t *src_ip,
+                        uint16_t src_port) {
+  handle_times++;
+  for (int i = 0; i < len; i++)
+    putchar(data[i]);
+  if (len)
+    putchar('\n');
+  fflush(stdout);
+  tcp_send(data, len, 60000, src_ip, 60000); //发送udp包
+}
+
+void tcp_client() {
+  printf("tcp client!\n");
+  uint8_t dst_ip[NET_IP_LEN] = {10, 250, 196, 1};
+  tcp_open(60000, tcp_client_handler, 0);
+  tcp_connect(60000, dst_ip);
+  while (handle_times < 2) {
+    net_poll();
+  }
+  printf("close connection.\n");
+  tcp_close(60000, dst_ip);
+  while (!(tcp_is_closed())) {
+    net_poll();
+  }
+  printf("client exit.\n");
+}
 #endif
 
 void ping() {

@@ -120,7 +120,6 @@ void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
     return;
   int syn = 0, fin = 0, ack = 0;
   buf_t buf;
-  if (fin_receive || fin_send || is_end) len = 0;
   buf_init(&buf, len);
   if (data)
     memcpy(buf.data, data, len);
@@ -192,7 +191,7 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
     fin_receive = true;
   }
 
-  // 收到终止报文确认 TODO
+  // 收到终止报文确认
   if (fin_send && fin_receive && (hdr->flags & FLAG_ACK)) {
     tcp_rst();
     is_end = true;
@@ -200,6 +199,7 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
 
   // 更新 ack TODO
   peer_seq = swap32(hdr->seqno);
+  if (peer_seq != ackno) return; // 未收到可靠包，丢弃
   if (hdr->flags & FLAG_ACK) {
     peer_ack = swap32(hdr->ackno);
     seq = peer_ack;
@@ -230,6 +230,12 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
   } else {
     buf_remove_header(buf, head_len);
     (*handler)(buf->data, buf->len, src_ip, src_port16);
+  }
+
+  if ((fin_receive || fin_send || is_end || (syn_receive && !syn_send) || (!syn_receive && !syn_send))) {
+    // send syn/fin/empty ack
+    tcp_send(NULL, 0, dst_port16, src_ip, src_port16);
+    return;
   }
 
   // fill window

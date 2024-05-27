@@ -31,14 +31,17 @@ void udp_listen() {
 #endif
 
 #ifdef TCP
+int handle_times = 0;
 void tcp_handler(uint8_t *data, size_t len, uint8_t *src_ip,
                  uint16_t src_port) {
+  handle_times++;
   for (int i = 0; i < len; i++)
     putchar(data[i]);
   if (len)
     putchar('\n');
   fflush(stdout);
-  char *str = "hi!";
+  char *str = "hi";
+  str[0] += handle_times;
   for (int i = 0; i < strlen(str); i++) {
     queue_push(&outstream, (uint8_t)(str[i]));
   }
@@ -54,7 +57,6 @@ void tcp_server() {
   tcp_close(60000, dst_ip);
 }
 
-int handle_times = 0;
 void tcp_client_handler(uint8_t *data, size_t len, uint8_t *src_ip,
                         uint16_t src_port) {
   handle_times++;
@@ -63,7 +65,8 @@ void tcp_client_handler(uint8_t *data, size_t len, uint8_t *src_ip,
   if (len)
     putchar('\n');
   fflush(stdout);
-  char *str = "hi.";
+  char *str = "hi";
+  str[0] += handle_times;
   for (int i = 0; i < strlen(str); i ++) {
     queue_push(&outstream, (uint8_t)(str[i]));
   }

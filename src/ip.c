@@ -137,7 +137,8 @@ void ip_in(buf_t *buf, uint8_t *src_mac) {
   // 掐头去尾
   buf_remove_padding(buf, buf->len - swap16(ip_hdr.total_len16));
   net_protocol_t protocol = (net_protocol_t)(ip_hdr.protocol);
-  if (protocol != NET_PROTOCOL_ICMP && protocol != NET_PROTOCOL_UDP) {
+  if (protocol != NET_PROTOCOL_ICMP && protocol != NET_PROTOCOL_UDP &&
+      protocol != NET_PROTOCOL_TCP) {
     icmp_unreachable(buf, ip_hdr.src_ip, ICMP_CODE_PROTOCOL_UNREACH);
   }
   buf_remove_header(buf, sizeof(ip_hdr_t));

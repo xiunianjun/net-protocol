@@ -4,6 +4,7 @@
 #include "ethernet.h"
 #include "icmp.h"
 #include "ip.h"
+#include "tcp.h"
 #include "udp.h"
 
 /**
@@ -48,6 +49,7 @@ int net_init() {
   ip_init();
   icmp_init();
   udp_init();
+  tcp_init();
   return 0;
 }
 

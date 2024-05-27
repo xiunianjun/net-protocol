@@ -8,6 +8,10 @@ uint16_t checksum16(uint16_t *data, size_t len);
 #define swap16(x)                                                              \
   ((((x)&0xFF) << 8) | (((x) >> 8) & 0xFF)) //为16位数据交换大小端
 
+#define swap32(x)                                                              \
+  ((((x)&0xFF) << 24) | (((x)&0xFF00) << 8) | (((x)&0xFF0000) >> 8) |          \
+   (((x) >> 24) & 0xFF))
+
 char *iptos(uint8_t *ip);
 char *mactos(uint8_t *mac);
 char *timetos(time_t timestamp);

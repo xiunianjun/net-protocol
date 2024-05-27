@@ -38,6 +38,14 @@ typedef struct tcp_hdr {
   uint16_t checksum16; // 校验和
   uint16_t uptr;       // urgent pointer
 } tcp_hdr_t;
+
+typedef struct tcp_peso_hdr {
+  uint8_t src_ip[4];    // 源IP地址
+  uint8_t dst_ip[4];    // 目的IP地址
+  uint8_t placeholder;  // 必须置0,用于填充对齐
+  uint8_t protocol;     // 协议号
+  uint16_t total_len16; // 整个数据包的长度
+} tcp_peso_hdr_t;
 #pragma pack()
 
 #define TCP_HEADER_LEN 20
@@ -50,7 +58,6 @@ typedef void (*tcp_handler_t)(uint8_t *data, size_t len, uint8_t *src_ip,
 
 void tcp_init();
 void tcp_in(buf_t *buf, uint8_t *src_ip);
-void tcp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port);
 void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
               uint16_t dst_port);
 int tcp_open(uint16_t port, tcp_handler_t handler);

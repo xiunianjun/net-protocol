@@ -19,6 +19,7 @@ link_directories(./Npcap/Lib ./Npcap/Lib/x64)
 aux_source_directory(./src DIR_SRCS)
 
 add_executable(main ${DIR_SRCS})
+message(${DIR_SRCS})
 target_link_libraries(main ${PCAP})
 
 set(TEST_FIX_SOURCE 
@@ -28,6 +29,7 @@ set(TEST_FIX_SOURCE
     src/buf.c
     src/map.c
     src/utils.c
+    src/tcp.c
 )
 
 # aux_source_directory(./testing DIR_TEST)

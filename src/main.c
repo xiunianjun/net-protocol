@@ -38,7 +38,7 @@ void tcp_handler(uint8_t *data, size_t len, uint8_t *src_ip,
     putchar(data[i]);
   putchar('\n');
   printf("there is %ld as\n", len);
-  tcp_send(data, len, 60000, src_ip, 60000); //发送udp包
+  tcp_send(data, 0, 60000, src_ip, 60000); //发送udp包
 }
 
 void tcp_server() {

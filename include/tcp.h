@@ -2,6 +2,9 @@
 #define TCP_H
 
 #include "net.h"
+#include "queue.h"
+
+extern queue outstream;
 
 // TCPHeader
 // ~~~

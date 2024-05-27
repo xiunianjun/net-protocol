@@ -5,6 +5,8 @@
 
 map_t tcp_table;
 
+queue outstream;
+
 int is_end = 0;        // 当前连接是否结束
 int is_server = 0;     // 主机是 server 吗？
 int window_size = 4;   // 发送窗口
@@ -118,6 +120,7 @@ void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
     return;
   int syn = 0, fin = 0, ack = 0;
   buf_t buf;
+  if (fin_receive || fin_send || is_end) len = 0;
   buf_init(&buf, len);
   if (data)
     memcpy(buf.data, data, len);
@@ -228,6 +231,15 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
     buf_remove_header(buf, head_len);
     (*handler)(buf->data, buf->len, src_ip, src_port16);
   }
+
+  // fill window
+  uint8_t new_data[QUEUE_MAX_SIZE];
+  int ori_size = outstream.size;
+  for (int i = 0; i < ori_size; ++i) {
+    new_data[i] = queue_front(&outstream);
+    queue_pop(&outstream);
+  }
+  tcp_send(new_data, ori_size, dst_port16, src_ip, src_port16);
 }
 
 /**
@@ -282,5 +294,6 @@ void tcp_close(uint16_t port, uint8_t *dst_ip) {
 void tcp_init() {
   map_init(&tcp_table, sizeof(uint16_t), sizeof(tcp_handler_t), 0, 0, NULL);
   net_add_protocol(NET_PROTOCOL_TCP, tcp_in);
+  queue_init(&outstream);
   tcp_rst();
 }

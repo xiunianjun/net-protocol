@@ -30,6 +30,7 @@ set(TEST_FIX_SOURCE
     src/map.c
     src/utils.c
     src/tcp.c
+    src/queue.c
 )
 
 # aux_source_directory(./testing DIR_TEST)

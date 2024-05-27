@@ -1,6 +1,7 @@
 #include "driver.h"
 #include "icmp.h"
 #include "net.h"
+#include "tcp.h"
 #include "udp.h"
 #include <stdlib.h>
 
@@ -27,6 +28,28 @@ void udp_listen() {
     net_poll(); // 一次主循环
   }
 }
+#endif
+
+#ifdef TCP
+void tcp_handler(uint8_t *data, size_t len, uint8_t *src_ip,
+                 uint16_t src_port) {
+  printf("recv tcp packet from %s:%u len=%zu\n", iptos(src_ip), src_port, len);
+  for (int i = 0; i < len; i++)
+    putchar(data[i]);
+  putchar('\n');
+  printf("there is %ld as\n", len);
+  tcp_send(data, len, 60000, src_ip, 60000); //发送udp包
+}
+
+void tcp_server() {
+  printf("tcp server!\n");
+  tcp_open(60000, tcp_handler);
+  while (1) {
+    net_poll(); // 一次主循环
+  }
+}
+
+void tcp_client() { printf("tcp client!\n"); }
 #endif
 
 void ping() {
@@ -109,6 +132,12 @@ int main(int argc, char const *argv[]) {
 #endif
   case 1:
     ping();
+    break;
+  case 2:
+    tcp_server();
+    break;
+  case 3:
+    tcp_client();
     break;
   default:
     break;

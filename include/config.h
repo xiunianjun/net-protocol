@@ -6,6 +6,7 @@
 #define IP
 #define ICMP
 #define UDP
+#define TCP
 
 #define true (1)
 #define false (0)

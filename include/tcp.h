@@ -53,9 +53,9 @@ typedef struct tcp_peso_hdr {
 
 #define TCP_HEADER_LEN 20
 #define RETRANSMISSON_TIMEOUT 3 // 超时重传时间，设置为 3s
-#define FLAG_ACK (0x10) /* 0b0001'0000 */
-#define FLAG_SYN (0x02) /* 0b0000'0010 */
-#define FLAG_FIN (0x01) /* 0b0000'0001 */
+#define FLAG_ACK (0x10)         /* 0b0001'0000 */
+#define FLAG_SYN (0x02)         /* 0b0000'0010 */
+#define FLAG_FIN (0x01)         /* 0b0000'0001 */
 
 typedef void (*tcp_handler_t)(uint8_t *data, size_t len, uint8_t *src_ip,
                               uint16_t src_port);
@@ -65,7 +65,7 @@ void tcp_in(buf_t *buf, uint8_t *src_ip);
 void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
               uint16_t dst_port);
 void tcp_connect(uint16_t port, uint8_t *dst_ip);
-void tcp_tick();  // 由 net class 周期性调用
+void tcp_tick(); // 由 net class 周期性调用
 int tcp_open(uint16_t port, tcp_handler_t handler, int server);
 int tcp_is_closed();
 void tcp_close(uint16_t port, uint8_t *dst_ip);

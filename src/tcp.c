@@ -190,12 +190,12 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
   }
   hdr->checksum16 = checksum16_old;
 
-  // if (syn_send && syn_receive && swap32(hdr->seqno) != ackno)
-  //   return; // 未收到顺序包，丢弃。一个简单的保证接收方可靠传输的 solution
+  if (syn_receive && swap32(hdr->seqno) != ackno)
+    return; // 未收到顺序包，丢弃。一个简单的保证接收方可靠传输的 solution
 
   if (hdr->flags & FLAG_ACK) {
-    // if (seq != swap32(hdr->ackno) - 1)  return; //
-    // 简单地保障当前帧先被传出去再发下一个，从而简单地实现超时重传
+    if (syn_send && seq != swap32(hdr->ackno))
+      return; // 简单地保障当前帧先被传出去再发下一个，从而简单地实现超时重传
     peer_ack = swap32(hdr->ackno);
     should_ack = false;
     retrans_time_cnt_on = 0;

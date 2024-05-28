@@ -87,6 +87,7 @@ int net_in(buf_t *buf, uint16_t protocol, uint8_t *src) {
  *
  */
 void net_poll() {
+  tcp_tick();
 #ifdef ETHERNET
   ethernet_poll();
 #endif

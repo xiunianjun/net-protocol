@@ -19,6 +19,9 @@ uint32_t seq = 0;      // 当前序列号
 uint32_t ackno = 0;    // 当前要发的 ACK
 uint32_t peer_seq = 0; // 对方序列号
 uint32_t peer_ack = 0; // 对方发来的 ACK
+int retrans_time_cnt_on = 0;// 记录是否进行超时统计
+time_t start = 0;  // 当前帧发送出去的时间
+buf_t restrans_sent_data;
 
 /**
  * @brief 重置 tcp 连接
@@ -69,7 +72,7 @@ static uint16_t tcp_checksum(buf_t *buf, uint8_t *src_ip, uint8_t *dst_ip) {
  * @param dst_ip 目的ip地址
  * @param dst_port 目的端口
  */
-void tcp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port,
+void tcp_out(buf_t *buf, int len, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port,
              int syn, int fin, int ack) {
   buf_add_header(buf, sizeof(tcp_hdr_t));
   tcp_hdr_t *hdr = (tcp_hdr_t *)buf->data;
@@ -77,13 +80,15 @@ void tcp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port,
   hdr->doff = ((TCP_HEADER_LEN / 4) << 4);
   hdr->src_port16 = swap16(src_port);
   hdr->dst_port16 = swap16(dst_port);
+  hdr->seqno = swap32(seq);
+
+  seq += len;
 
   // 还没开始链接，发送
   if (syn) {
+    seq ++;
     hdr->flags = (hdr->flags | FLAG_SYN);
   }
-
-  hdr->seqno = swap32(seq);
 
   // 如果要发送 ACK 则发送（顺带 ACK ）
   if (ack) {
@@ -94,12 +99,22 @@ void tcp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port,
 
   // 对方链接关闭
   if (fin) {
+    seq ++;
     hdr->flags = (hdr->flags | FLAG_FIN);
   }
+
 
   // 校验和
   hdr->checksum16 = 0;
   hdr->checksum16 = swap16(tcp_checksum(buf, net_if_ip, dst_ip));
+
+  if (!retrans_time_cnt_on && (syn || fin || buf->len - TCP_HEADER_LEN > 0)) {  // 不对 ACK 进行重传
+    buf_init(&restrans_sent_data, buf->len);
+    memcpy(restrans_sent_data.data, buf->data, buf->len);
+    tcp_hdr_t* tmp_hdr = (tcp_hdr_t*)(buf->data);
+    retrans_time_cnt_on = 1;
+    start = time(NULL);
+  }
 
   // 发送数据
   ip_out(buf, dst_ip, NET_PROTOCOL_TCP);
@@ -116,8 +131,6 @@ void tcp_out(buf_t *buf, uint16_t src_port, uint8_t *dst_ip, uint16_t dst_port,
  */
 void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
               uint16_t dst_port) {
-  if (!should_ack && !len && !(!syn_receive && !syn_send))
-    return;
   int syn = 0, fin = 0, ack = 0;
   buf_t buf;
   buf_init(&buf, len);
@@ -149,7 +162,7 @@ void tcp_send(uint8_t *data, uint16_t len, uint16_t src_port, uint8_t *dst_ip,
 
   if (!fin && !syn && !len && !ack)
     return;
-  tcp_out(&buf, src_port, dst_ip, dst_port, syn, fin, ack);
+  tcp_out(&buf, len, src_port, dst_ip, dst_port, syn, fin, ack);
 }
 
 /**
@@ -179,16 +192,31 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
   }
   hdr->checksum16 = checksum16_old;
 
+  peer_seq = swap32(hdr->seqno);
+  // if (syn_send && syn_receive && peer_seq != ackno)
+  //   return; // 未收到顺序包，丢弃。一个简单的保证接收方可靠传输的 solution
+
+  if (hdr->flags & FLAG_ACK) {
+    peer_ack = swap32(hdr->ackno);
+    // printf("%d, %d, %d, %d\n", seq, peer_seq, ackno, peer_ack);
+    // if (seq != peer_ack - 1)  return; // 简单地保障当前帧先被传出去再发下一个，从而简单地实现超时重传
+    should_ack = false;
+  }
+
+  retrans_time_cnt_on = 0;
+
   // 收到链接报文
   if (hdr->flags & FLAG_SYN) {
     fin_receive = false;
     syn_receive = true;
     is_end = false;
+    should_ack = true;
   }
 
   // 收到终止报文
   if (hdr->flags & FLAG_FIN) {
     fin_receive = true;
+    should_ack = true;
   }
 
   // 收到终止报文确认
@@ -198,12 +226,6 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
   }
 
   // 更新 ack TODO
-  peer_seq = swap32(hdr->seqno);
-  if (peer_seq != ackno) return; // 未收到可靠包，丢弃
-  if (hdr->flags & FLAG_ACK) {
-    peer_ack = swap32(hdr->ackno);
-    seq = peer_ack;
-  }
   if (buf->len > head_len ||
       ((hdr->flags & FLAG_FIN) || (hdr->flags & FLAG_SYN))) {
     ackno = peer_seq + ((hdr->flags & FLAG_FIN) ? 1 : 0) +
@@ -232,20 +254,36 @@ void tcp_in(buf_t *buf, uint8_t *src_ip) {
     (*handler)(buf->data, buf->len, src_ip, src_port16);
   }
 
-  if ((fin_receive || fin_send || is_end || (syn_receive && !syn_send) || (!syn_receive && !syn_send))) {
-    // send syn/fin/empty ack
+  if ((fin_receive || fin_send || is_end || (syn_receive && !syn_send) ||
+       (!syn_receive && !syn_send))) {
+    // send syn/fin/empty ack, without data
     tcp_send(NULL, 0, dst_port16, src_ip, src_port16);
     return;
   }
 
   // fill window
   uint8_t new_data[QUEUE_MAX_SIZE];
-  int ori_size = outstream.size;
+  int ori_size = (outstream.size > window_size ? window_size : outstream.size);
   for (int i = 0; i < ori_size; ++i) {
     new_data[i] = queue_front(&outstream);
     queue_pop(&outstream);
   }
+  if (ori_size > 0) should_ack = true;
   tcp_send(new_data, ori_size, dst_port16, src_ip, src_port16);
+}
+
+void tcp_tick() {  // 由 net class 周期性调用
+  if (!retrans_time_cnt_on) return;
+  time_t cur_time = time(NULL);
+  if (cur_time - start >= RETRANSMISSON_TIMEOUT) {
+    uint8_t dst_ip[NET_IP_LEN] = {10, 250, 196, 1};
+    tcp_hdr_t* tmp_hdr = (tcp_hdr_t*)(restrans_sent_data.data);
+    buf_t retrans_tmp_buf;
+    buf_init(&retrans_tmp_buf, restrans_sent_data.len);
+    memcpy(retrans_tmp_buf.data, restrans_sent_data.data, restrans_sent_data.len);
+    ip_out(&retrans_tmp_buf, dst_ip, NET_PROTOCOL_TCP);
+    start = cur_time;
+  }
 }
 
 /**
@@ -288,8 +326,7 @@ int tcp_is_closed() { return is_end; }
 void tcp_close(uint16_t port, uint8_t *dst_ip) {
   buf_t buf;
   buf_init(&buf, 0);
-  tcp_out(&buf, 60000, dst_ip, port, 0, 1, should_ack);
-  should_ack = false;
+  tcp_out(&buf, 0, 60000, dst_ip, port, 0, 1, 1);
   fin_send = true;
 }
 

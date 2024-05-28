@@ -40,11 +40,7 @@ void tcp_handler(uint8_t *data, size_t len, uint8_t *src_ip,
   if (len)
     putchar('\n');
   fflush(stdout);
-  char *str = "hi";
-  str[0] += handle_times;
-  for (int i = 0; i < strlen(str); i++) {
-    queue_push(&outstream, (uint8_t)(str[i]));
-  }
+  tcp_send(data, len, 60000, src_ip, 60000); //发送udp包
 }
 
 void tcp_server() {
@@ -66,9 +62,8 @@ void tcp_client_handler(uint8_t *data, size_t len, uint8_t *src_ip,
     putchar('\n');
   fflush(stdout);
   char *str = "hi";
-  str[0] += handle_times;
-  for (int i = 0; i < strlen(str); i ++) {
-    queue_push(&outstream, (uint8_t)(str[i]));
+  for (int i = 0; i < strlen(str); i++) {
+    queue_push(&outstream, (uint8_t)(str[i] + handle_times));
   }
 }
 
@@ -81,6 +76,7 @@ void tcp_client() {
     net_poll();
   }
   printf("close connection.\n");
+  sleep(1);
   tcp_close(60000, dst_ip);
   while (!(tcp_is_closed())) {
     net_poll();

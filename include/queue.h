@@ -3,7 +3,7 @@
 
 #include "net.h"
 
-#define QUEUE_MAX_SIZE 128
+#define QUEUE_MAX_SIZE 1024
 
 typedef struct queue {
   int size;

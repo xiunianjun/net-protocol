@@ -31,64 +31,105 @@ void udp_listen() {
 #endif
 
 #ifdef TCP
-int handle_times = 0;
-void tcp_handler(uint8_t *data, size_t len, uint8_t *src_ip,
-                 uint16_t src_port) {
-  handle_times++;
+void echo_handler(uint8_t *data, size_t len, uint8_t *src_ip,
+                  uint16_t src_port) {
   for (int i = 0; i < len; i++)
     putchar(data[i]);
   if (len)
     putchar('\n');
   fflush(stdout);
+
   tcp_send(data, len, 60000, src_ip, 60000); //发送udp包
 }
 
 void tcp_server() {
   printf("tcp server!\n");
-  tcp_open(60000, tcp_handler, 1);
+
+  tcp_open(60000, echo_handler, 1); // 启动 TCP 监听
   while (1) {
     net_poll(); // 一次主循环
   }
+
   uint8_t dst_ip[NET_IP_LEN] = {10, 250, 196, 1};
-  tcp_close(60000, dst_ip);
+  tcp_close(60000, dst_ip); // 关闭 TCP 连接，事实上是unreachable
 }
 
-void tcp_client_handler(uint8_t *data, size_t len, uint8_t *src_ip,
-                        uint16_t src_port) {
+#ifdef HTTP
+void http_handler(uint8_t *data, size_t len, uint8_t *src_ip,
+                  uint16_t src_port) {
+  printf("req[%s]\n", data);
+  char response[1024];
+  char *body = "<html><body><h1>Not Found!Hahaha</h1></body></html>";
+  sprintf(response,
+          "HTTP/1.1 404 ok\r\nContent-Type: text/html\r\nContent-Length: "
+          "%ld\r\nLocation: https://www.baidu.com\r\n\r\n%s",
+          strlen(body), body);
+
+  // for (int i = 0; i < len; i++)
+  //   putchar(data[i]);
+  // if (len)
+  //   putchar('\n');
+  fflush(stdout);
+
+  tcp_send(response, strlen(response), 62000, src_ip, src_port);
+}
+
+// http://10.250.196.103:62000/
+void http_server() {
+  printf("http server!\n");
+
+  tcp_open(62000, http_handler, 1); // 启动 TCP 监听
+  while (1) {
+    net_poll(); // 一次主循环
+  }
+
+  uint8_t dst_ip[NET_IP_LEN] = {10, 250, 196, 1};
+  tcp_close(62000, dst_ip); // 关闭 TCP 连接，事实上是unreachable
+}
+#endif
+
+int handle_times = 0;
+void say_hi_handler(uint8_t *data, size_t len, uint8_t *src_ip,
+                    uint16_t src_port) {
   handle_times++;
   for (int i = 0; i < len; i++)
     putchar(data[i]);
   if (len)
     putchar('\n');
   fflush(stdout);
+
   char *str = "hi";
   for (int i = 0; i < strlen(str); i++) {
-    queue_push(&outstream, (uint8_t)(str[i] + handle_times));
+    queue_push(&outstream, (uint8_t)(str[i]));
   }
 }
 
 void tcp_client() {
   printf("tcp client!\n");
   uint8_t dst_ip[NET_IP_LEN] = {10, 250, 196, 1};
-  tcp_open(60000, tcp_client_handler, 0);
-  tcp_connect(60000, dst_ip);
-  while (handle_times < 5) {
+
+  tcp_open(60000, say_hi_handler, 0); // 注册 TCP 处理程序
+  tcp_connect(60000, dst_ip);         // 创建 TCP 连接（发送 SYN ）
+
+  while (handle_times < 5) { // 发送五次数据
     net_poll();
   }
+
   printf("close connection.\n");
-  sleep(1);
-  tcp_close(60000, dst_ip);
-  while (!(tcp_is_closed())) {
+  sleep(1); // 等待一段时间以保证 fully acked （偷懒实现）
+  tcp_close(60000, dst_ip); // 关闭 TCP 连接 （发送 FIN ）
+
+  while (!(tcp_is_closed())) { // 等待 server 的 FIN-ACK
     net_poll();
   }
-  printf("client exit.\n");
+  printf("client exit.\n"); // 成功退出
 }
 #endif
 
 void ping() {
   uint8_t data[32] = {0};
   uint8_t dst_ip[4] = {10, 250, 196, 1};
-  printf("Pinging baidu.com [%s] with 32 bytes of data:\n", iptos(dst_ip));
+  printf("Pinging %s with 32 bytes of data:\n", iptos(dst_ip));
 
   /* for statistics */
   int recv_num = 0;
@@ -167,12 +208,28 @@ int main(int argc, char const *argv[]) {
     ping();
     break;
   case 2:
+#ifdef TCP
     tcp_server();
     break;
+#else
+    printf("not define TCP!\n");
+    return -1;
+#endif
+    break;
   case 3:
+#ifdef TCP
     tcp_client();
     break;
+#else
+    printf("not define TCP!\n");
+    return -1;
+#endif
+    break;
+  case 4:
+    http_server();
+    break;
   default:
+    printf("Invalid option %d! good value is [0, 3]\n", op_code);
     break;
   }
 

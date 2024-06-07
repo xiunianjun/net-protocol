@@ -3,25 +3,26 @@
 #include "ip.h"
 #include <assert.h>
 
-map_t tcp_table;
-
-queue outstream;
-
-int is_end = 0;              // 当前连接是否结束
-int is_server = 0;           // 主机是 server 吗？
-int window_size = 4;         // 发送窗口
-int syn_receive = 0;         // 标识是否已经收到 syn 信号
-int syn_send = 0;            // 标识是否已经发送 syn 信号
-int fin_receive = 0;         // 标识是否已经收到 fin 信号
-int fin_send = 0;            // 标识是否已经发送 fin 信号
-int should_ack = 0;          // 标记己方是否需要 ack
-uint32_t seq = 0;            // 当前序列号
-uint32_t ackno = 0;          // 当前要发的 ACK
-uint32_t peer_seq = 0;       // 对方序列号
-uint32_t peer_ack = 0;       // 对方发来的 ACK
+map_t tcp_table; // 记录 <port, handler>
+queue outstream; // 与上层 APP 交互的数据流，待发送
+/* 状态转换相关 */
+int is_server = 0;   // 主机是 server 吗？
+int syn_receive = 0; // 标识是否已经收到 syn 信号
+int syn_send = 0;    // 标识是否已经发送 syn 信号
+int fin_receive = 0; // 标识是否已经收到 fin 信号
+int fin_send = 0;    // 标识是否已经发送 fin 信号
+int is_end = 0;      // 当前连接是否结束
+int should_ack = 0;  // 标记己方是否需要 ack
+/* TCP 传输字段相关 */
+int window_size = 4;   // 发送窗口
+uint32_t seq = 0;      // 当前发送的序列号
+uint32_t ackno = 0;    // 当前要发的 ACK
+uint32_t peer_seq = 0; // 对方发来的序列号
+uint32_t peer_ack = 0; // 对方发来的 ACK
+/* 超时重传相关 */
 int retrans_time_cnt_on = 0; // 记录是否进行超时统计
 time_t start = 0;            // 当前帧发送出去的时间
-buf_t restrans_sent_data;
+buf_t restrans_sent_data;    // 需要重传的数据帧
 
 /**
  * @brief 重置 tcp 连接
@@ -279,7 +280,7 @@ void tcp_tick() { // 由 net class 周期性调用
   if (!retrans_time_cnt_on)
     return;
   time_t cur_time = time(NULL);
-  if (cur_time - start >= RETRANSMISSON_TIMEOUT) {
+  if (cur_time - start >= RETRANSMISSON_TIMEOUT) { // 超时
     uint8_t dst_ip[NET_IP_LEN] = {10, 250, 196, 1};
     buf_t retrans_tmp_buf;
     buf_init(&retrans_tmp_buf, restrans_sent_data.len);
